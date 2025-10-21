@@ -7,15 +7,17 @@
     "tabCapture",
     "tabs",
     "downloads",
-    "storage"
+    "storage",
+    "offscreen"
   ],
   "host_permissions": [],
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "DejaVu Recorder"
-  },
   "background": {
     "service_worker": "background.js",
     "type": "module"
+  },
+  "offscreen_enabled": true,
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "DejaVu Recorder"
   }
 }
