@@ -125,14 +125,9 @@ async function captureBug() {
     throw new Error("No video has been captured yet.");
   }
 
-  const url = URL.createObjectURL(blob);
   const filename = buildCaptureFilename();
 
-  try {
-    await downloadUrl(url, filename);
-  } finally {
-    revokeUrlLater(url);
-  }
+  await requestDownload(blob, filename);
 
   return {
     filename,
@@ -141,59 +136,87 @@ async function captureBug() {
   };
 }
 
-function captureTabStream(tabId) {
-  return new Promise((resolve, reject) => {
-    chrome.tabCapture.capture(
-      {
-        video: true,
-        audio: true,
-        targetTabId: tabId,
-        videoConstraints: {
-          mandatory: {
-            chromeMediaSource: "tab",
-            maxFrameRate: 30,
-            maxWidth: 1920,
-            maxHeight: 1080
+async function captureTabStream(tabId) {
+  if (chrome.tabCapture?.capture) {
+    return new Promise((resolve, reject) => {
+      chrome.tabCapture.capture(
+        {
+          video: true,
+          audio: true,
+          targetTabId: tabId,
+          videoConstraints: {
+            mandatory: {
+              chromeMediaSource: "tab",
+              maxFrameRate: 30,
+              maxWidth: 1920,
+              maxHeight: 1080
+            }
+          },
+          audioConstraints: {
+            mandatory: {
+              chromeMediaSource: "tab"
+            }
           }
         },
-        audioConstraints: {
-          mandatory: {
-            chromeMediaSource: "tab"
+        (stream) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
           }
+          if (!stream) {
+            reject(new Error("Failed to capture tab stream."));
+            return;
+          }
+          resolve(stream);
+        }
+      );
+    });
+  }
+
+  const streamId = await requestTabCaptureStreamId(tabId);
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("Tab capture is unavailable in this environment.");
+  }
+
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: {
+        mandatory: {
+          chromeMediaSource: "tab",
+          chromeMediaSourceId: streamId
         }
       },
-      (stream) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-          return;
+      video: {
+        mandatory: {
+          chromeMediaSource: "tab",
+          chromeMediaSourceId: streamId,
+          maxFrameRate: 30,
+          maxWidth: 1920,
+          maxHeight: 1080
         }
-        if (!stream) {
-          reject(new Error("Failed to capture tab stream."));
-          return;
-        }
-        resolve(stream);
       }
-    );
-  });
+    });
+  } catch (error) {
+    throw new Error(error?.message ?? "Failed to capture tab stream.");
+  }
 }
 
-function downloadUrl(url, filename) {
-  return new Promise((resolve, reject) => {
-    chrome.downloads.download(
-      {
-        url,
-        filename,
-        saveAs: false
-      },
-      (downloadId) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-          return;
-        }
-        resolve(downloadId);
-      }
-    );
+async function requestTabCaptureStreamId(tabId) {
+  const response = await chrome.runtime.sendMessage({
+    type: "GET_TAB_CAPTURE_STREAM_ID",
+    tabId
   });
+
+  if (!response?.ok) {
+    throw new Error(response?.error ?? "Failed to retrieve stream id.");
+  }
+
+  if (!response.result) {
+    throw new Error("Failed to retrieve stream id.");
+  }
+
+  return response.result;
 }
 
 function createRecorder(stream) {
@@ -320,16 +343,6 @@ function buildCaptureFilename() {
   return `${DOWNLOAD_FILENAME_PREFIX}_${timestamp}.webm`;
 }
 
-function revokeUrlLater(url) {
-  setTimeout(() => {
-    try {
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.warn("[DejaVu] Failed to revoke capture URL", error);
-    }
-  }, 5000);
-}
-
 function getStatus() {
   const approxSizeBytes = state.buffer.bytes ?? 0;
   const approxDurationMs = state.buffer.estimatedDurationMs;
@@ -339,4 +352,22 @@ function getStatus() {
     approxDurationMs,
     startedAt: state.startedAt
   };
+}
+
+async function requestDownload(blob, filename) {
+  const mimeType = blob.type || state.buffer?.mimeType;
+  const payload = {
+    type: "DOWNLOAD_CAPTURE",
+    filename,
+    mimeType,
+    blob: await blob.arrayBuffer()
+  };
+
+  const response = await chrome.runtime.sendMessage(payload);
+
+  if (!response?.ok) {
+    throw new Error(response?.error ?? "Failed to download capture.");
+  }
+
+  return response.result;
 }

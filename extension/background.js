@@ -35,6 +35,10 @@ async function handleMessage(message, sender) {
       return captureBug();
     case "GET_STATUS":
       return getStatus();
+    case "GET_TAB_CAPTURE_STREAM_ID":
+      return getTabCaptureStreamId(message.tabId);
+    case "DOWNLOAD_CAPTURE":
+      return downloadCapture(message.blob, message.filename, message.mimeType);
     default:
       console.warn("[DejaVu] Unknown message", message, sender);
       throw new Error("Unknown message type");
@@ -109,6 +113,30 @@ async function ensureOffscreenDocument() {
   });
 }
 
+async function getTabCaptureStreamId(tabId) {
+  if (typeof tabId !== "number") {
+    throw new Error("Missing active tab id.");
+  }
+
+  if (!chrome.tabCapture?.getMediaStreamId) {
+    throw new Error("Tab capture is unavailable in this environment.");
+  }
+
+  return new Promise((resolve, reject) => {
+    chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (!streamId) {
+        reject(new Error("Failed to retrieve stream id."));
+        return;
+      }
+      resolve(streamId);
+    });
+  });
+}
+
 async function maybeCloseOffscreenDocument() {
   if (!chrome.offscreen?.hasDocument) {
     return;
@@ -122,4 +150,78 @@ async function maybeCloseOffscreenDocument() {
   } catch (error) {
     console.warn("[DejaVu] Failed to close offscreen document", error);
   }
+}
+
+async function downloadCapture(blobData, filename, mimeType) {
+  if (!chrome.downloads?.download) {
+    throw new Error("Downloads API is unavailable in this environment.");
+  }
+
+  if (typeof filename !== "string" || filename.trim().length === 0) {
+    throw new Error("Missing download filename.");
+  }
+
+  if (!blobData) {
+    throw new Error("Missing capture data.");
+  }
+
+  const blob = await normalizeBlob(blobData, mimeType);
+  const url = URL.createObjectURL(blob);
+
+  try {
+    const downloadId = await new Promise((resolve, reject) => {
+      chrome.downloads.download(
+        {
+          url,
+          filename,
+          saveAs: false
+        },
+        (id) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(id);
+        }
+      );
+    });
+
+    scheduleUrlRevoke(url);
+
+    return { downloadId };
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+}
+
+async function normalizeBlob(blobData, mimeType) {
+  if (blobData instanceof Blob) {
+    return blobData;
+  }
+
+  if (blobData instanceof ArrayBuffer) {
+    return new Blob([blobData], mimeType ? { type: mimeType } : undefined);
+  }
+
+  if (ArrayBuffer.isView(blobData)) {
+    return new Blob([blobData.buffer], mimeType ? { type: mimeType } : undefined);
+  }
+
+  if (blobData?.arrayBuffer instanceof Function) {
+    const buffer = await blobData.arrayBuffer();
+    return new Blob([buffer], mimeType ? { type: mimeType } : undefined);
+  }
+
+  throw new Error("Unsupported capture data type.");
+}
+
+function scheduleUrlRevoke(url) {
+  setTimeout(() => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.warn("[DejaVu] Failed to revoke download URL", error);
+    }
+  }, 5000);
 }

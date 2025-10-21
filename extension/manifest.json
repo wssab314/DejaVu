@@ -15,7 +15,6 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "offscreen_enabled": true,
   "action": {
     "default_popup": "popup.html",
     "default_title": "DejaVu Recorder"
