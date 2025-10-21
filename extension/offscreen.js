@@ -58,9 +58,12 @@ async function startRecording(tabId) {
   }
 
   const stream = await captureTabStream(tabId);
-  const recorder = createRecorder(stream);
+  const { recorder, mimeType } = createRecorder(stream);
 
   state.buffer.clear();
+  if (mimeType) {
+    state.buffer.setMimeType(mimeType);
+  }
   state.tabId = tabId;
   state.stream = stream;
   state.recorder = recorder;
@@ -195,12 +198,16 @@ function downloadUrl(url, filename) {
 
 function createRecorder(stream) {
   const options = selectRecorderOptions();
+  let recorder;
   try {
-    return new MediaRecorder(stream, options);
+    recorder = new MediaRecorder(stream, options);
   } catch (primaryError) {
     console.warn("[DejaVu] Failed to init recorder with preferred options", primaryError);
-    return new MediaRecorder(stream);
+    recorder = new MediaRecorder(stream);
   }
+
+  const resolvedMimeType = recorder.mimeType || options?.mimeType || null;
+  return { recorder, mimeType: resolvedMimeType };
 }
 
 function selectRecorderOptions() {

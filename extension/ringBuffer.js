@@ -6,7 +6,8 @@ export class BlobRingBuffer {
     const duration = maxDurationMs ?? 5 * 60 * 1000;
     const maxChunks = Math.ceil(duration / this.chunkDurationMs);
     this.maxChunks = Math.max(maxChunks, 1);
-    this.mimeType = mimeType ?? DEFAULT_MIME_TYPE;
+    this.defaultMimeType = mimeType ?? DEFAULT_MIME_TYPE;
+    this.mimeType = this.defaultMimeType;
     this.chunks = [];
     this.bytes = 0;
   }
@@ -19,6 +20,10 @@ export class BlobRingBuffer {
     this.chunks.push(blob);
     this.bytes += blob.size;
 
+    if (blob.type) {
+      this.mimeType = blob.type;
+    }
+
     while (this.chunks.length > this.maxChunks) {
       const removed = this.chunks.shift();
       if (removed) {
@@ -30,10 +35,19 @@ export class BlobRingBuffer {
   clear() {
     this.chunks = [];
     this.bytes = 0;
+    this.mimeType = this.defaultMimeType;
+  }
+
+  setMimeType(mimeType) {
+    if (typeof mimeType === "string" && mimeType.trim().length > 0) {
+      this.mimeType = mimeType;
+    }
   }
 
   toBlob() {
-    return new Blob(this.chunks, { type: this.mimeType });
+    const type = this.mimeType ?? this.defaultMimeType;
+    const options = type ? { type } : undefined;
+    return new Blob(this.chunks, options);
   }
 
   get length() {
