@@ -96,55 +96,6 @@
 
 ---
 
-### Stage 1: MVP 核心功能交付现状
-
-第一阶段聚焦“5分钟环形录屏”的可用 MVP，当前仓库已经包含以下交付物，位于 `extension/` 目录：
-
-* `manifest.json`: Manifest V3 配置，注册 Service Worker 与 Popup UI 所需权限。
-* `background.js`: 核心 Service Worker，负责 tabCapture 流、MediaRecorder 管理以及环形缓冲区逻辑。
-* `ringBuffer.js`: 纯内存 Blob Ring Buffer 实现，维持固定窗口的最近 5 分钟视频片段。
-* `popup.html / popup.js / popup.css`: 轻量化的控制面板，提供 Start / Stop / Capture Bug! 三个入口并实时反馈状态。
-
-> 当前 MVP 专注于视频录制链路（KR1、KR2、KR4），网络日志与用户操作抓取将在后续阶段补齐。
-
----
-
-### 本地加载与调试
-
-1. 构建目录 (一次性)
-    ```bash
-    git clone <repo-url>
-    cd DejaVu/extension
-    ```
-2. 打开 Chrome → 访问 `chrome://extensions/`。
-3. 开启右上角 **Developer mode**。
-4. 点击 **Load unpacked**，选择 `DejaVu/extension` 目录。
-5. 固定 DejaVu 图标后，就可以在需要的标签页执行：
-    - `Start Recording`: 触发 `chrome.tabCapture.capture` + `MediaRecorder`，开始 5 分钟环形缓存。
-    - `Capture Bug!`: 立即请求最新数据块、合并 Blob，并通过 `chrome.downloads` 下载 `.webm`。
-    - `Stop Recording`: 释放 MediaRecorder 与 tabCapture 流，重置缓冲区。
-
-加载成功后，可以在扩展弹窗底部的提示区查看提示信息（例如下载文件名、缓冲时长与估算体积）。
-
----
-
-### 内存占用验证（KR3）建议流程
-
-1. **开启录制**：在目标页面点击 `Start Recording`，等待 ~30 秒确保缓冲区被填充。
-2. **运行 10 分钟**：保持标签页前台以便持续写入视频数据，过程中可执行常规操作。
-3. **监控内存**：
-    - 方式 A：打开浏览器菜单 → More tools → **Task Manager**，关注 “DejaVu” 扩展的 Memory footprint。
-    - 方式 B：在扩展弹窗中多次点击 `Capture Bug!`，观察提示信息里的 `~XX MB`，确认大小趋于稳定。
-4. **记录结果**：确保 10 分钟后内存波动在 ±5% 内。若发现异常增长，可在 Task Manager 截图并附带扩展日志。
-
-为了辅助排查，`background.js` 中的 `getStatus` 会返回 `chunkCount / approxSizeBytes` 等指标，可在 DevTools → Extensions Service Worker 控制台执行：
-
-```js
-chrome.runtime.sendMessage({ type: "GET_STATUS" }, console.log);
-```
-
----
-
 ### 路线图 (Roadmap)
 
 * [ ] (P1) 完善`chrome.debugger` API的请求模拟功能。
