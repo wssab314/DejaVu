@@ -35,6 +35,8 @@ async function handleMessage(message, sender) {
       return captureBug();
     case "GET_STATUS":
       return getStatus();
+    case "GET_TAB_CAPTURE_STREAM_ID":
+      return getTabCaptureStreamId(message.tabId);
     default:
       console.warn("[DejaVu] Unknown message", message, sender);
       throw new Error("Unknown message type");
@@ -106,6 +108,30 @@ async function ensureOffscreenDocument() {
     url: OFFSCREEN_DOCUMENT_PATH,
     reasons: [chrome.offscreen.Reason.WEB_RTC],
     justification: OFFSCREEN_DOCUMENT_JUSTIFICATION
+  });
+}
+
+async function getTabCaptureStreamId(tabId) {
+  if (typeof tabId !== "number") {
+    throw new Error("Missing active tab id.");
+  }
+
+  if (!chrome.tabCapture?.getMediaStreamId) {
+    throw new Error("Tab capture is unavailable in this environment.");
+  }
+
+  return new Promise((resolve, reject) => {
+    chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (!streamId) {
+        reject(new Error("Failed to retrieve stream id."));
+        return;
+      }
+      resolve(streamId);
+    });
   });
 }
 

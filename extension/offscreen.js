@@ -141,40 +141,87 @@ async function captureBug() {
   };
 }
 
-function captureTabStream(tabId) {
-  return new Promise((resolve, reject) => {
-    chrome.tabCapture.capture(
-      {
-        video: true,
-        audio: true,
-        targetTabId: tabId,
-        videoConstraints: {
-          mandatory: {
-            chromeMediaSource: "tab",
-            maxFrameRate: 30,
-            maxWidth: 1920,
-            maxHeight: 1080
+async function captureTabStream(tabId) {
+  if (chrome.tabCapture?.capture) {
+    return new Promise((resolve, reject) => {
+      chrome.tabCapture.capture(
+        {
+          video: true,
+          audio: true,
+          targetTabId: tabId,
+          videoConstraints: {
+            mandatory: {
+              chromeMediaSource: "tab",
+              maxFrameRate: 30,
+              maxWidth: 1920,
+              maxHeight: 1080
+            }
+          },
+          audioConstraints: {
+            mandatory: {
+              chromeMediaSource: "tab"
+            }
           }
         },
-        audioConstraints: {
-          mandatory: {
-            chromeMediaSource: "tab"
+        (stream) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
           }
+          if (!stream) {
+            reject(new Error("Failed to capture tab stream."));
+            return;
+          }
+          resolve(stream);
+        }
+      );
+    });
+  }
+
+  const streamId = await requestTabCaptureStreamId(tabId);
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("Tab capture is unavailable in this environment.");
+  }
+
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: {
+        mandatory: {
+          chromeMediaSource: "tab",
+          chromeMediaSourceId: streamId
         }
       },
-      (stream) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-          return;
+      video: {
+        mandatory: {
+          chromeMediaSource: "tab",
+          chromeMediaSourceId: streamId,
+          maxFrameRate: 30,
+          maxWidth: 1920,
+          maxHeight: 1080
         }
-        if (!stream) {
-          reject(new Error("Failed to capture tab stream."));
-          return;
-        }
-        resolve(stream);
       }
-    );
+    });
+  } catch (error) {
+    throw new Error(error?.message ?? "Failed to capture tab stream.");
+  }
+}
+
+async function requestTabCaptureStreamId(tabId) {
+  const response = await chrome.runtime.sendMessage({
+    type: "GET_TAB_CAPTURE_STREAM_ID",
+    tabId
   });
+
+  if (!response?.ok) {
+    throw new Error(response?.error ?? "Failed to retrieve stream id.");
+  }
+
+  if (!response.result) {
+    throw new Error("Failed to retrieve stream id.");
+  }
+
+  return response.result;
 }
 
 function downloadUrl(url, filename) {
