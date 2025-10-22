@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>DejaVu Recorder</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    
+    <div class="header">
+      <h3>DejaVu 🐞</h3>
+    </div>
+    
+    <div id="status-idle" class="status-box">
+      <p>准备就绪 (缓冲区: 3分钟)</p>
+    </div>
+    
+    <div id="status-recording" class="status-box" style="display: none;">
+      <div class="status-line">
+        <div class="dot"></div>
+        <span>正在录制</span>
+      </div>
+      <div id="timer" class="timer">0:00</div>
+      <div id="buffer-status" class="buffer-status">缓冲区: 正在填充...</div>
+    </div>
+    
+    <div class="action-area">
+      <button id="startBtn">Start Recording</button>
+      <button id="captureBtn">Capture Bug!</button>
+    </div>
+
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+{
+    "manifest_version": 3,
+    "name": "DejaVu - Bug Recorder",
+    "version": "1.0",
+    "description": "为QA和开发人员打造的“时光机”插件，自动录制最后5分钟的屏幕、网络和操作。",
+    "permissions": [
+      "activeTab",
+      "debugger",
+      "scripting",
+      "storage",
+      "downloads",
+      "offscreen"   
+    ],
+    "host_permissions": [
+      "<all_urls>"    
+    ],
+    "background": {
+      "service_worker": "background.js"
+    },
+    "offscreen": {  
+    "path": "offscreen.html",
+    "reason": "USER_MEDIA",
+    "justification": "Need to capture tab video stream using getDisplayMedia()"
+    },
+    "action": {
+      "default_popup": "popup.html",
+      "default_icon": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png"
+      }
+    },
+    "icons": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
