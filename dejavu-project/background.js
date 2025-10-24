@@ -15,7 +15,22 @@ let actionLogs = [];
 let isRecording = false;
 let activeTabId = null;
 let recordingStartTime = null;
+let videoPort = null;
 
+function base64ToUint8Array(base64) {
+  try {
+    const binary = atob(base64);
+    const length = binary.length;
+    const bytes = new Uint8Array(length);
+    for (let i = 0; i < length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  } catch (e) {
+    console.error("Background: base64 解码失败:", e.message);
+    return null;
+  }
+}
 const DEBUGGER_VERSION = "1.3";
 
 // 3. 监听来自 Popup 和 Offscreen 的消息
@@ -57,30 +72,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // --- (新) 接收来自 Offscreen.js 的视频数据块 ---
     if (request.type === 'VIDEO_CHUNK') {
-      
-      // --- 诊断日志 3 (现在将读取 request.buffer.byteLength) ---
-      console.log(`Background: 收到 VIDEO_CHUNK。 大小: ${request.buffer?.byteLength} bytes. 当前 isRecording: ${isRecording}`);
-      // --- 诊断日志 3 结束 ---
-
-      // (关键) 必须检查 'request.buffer'
-      if (isRecording && request.buffer) {
-        
-        // (关键) 从 ArrayBuffer 重建 Blob
-        const newBlob = new Blob([request.buffer], { type: request.mimeType });
-        
-        // (关键) 将 *newBlob* 推入缓冲区
-        videoBuffer.push(newBlob);
-        
-        // --- 诊断日志 4 ---
-        console.log(`Background: 数据块已推入. videoBuffer 长度: ${videoBuffer.length}`);
-        // --- 诊断日志 4 结束 ---
-
-        if (videoBuffer.length > RING_BUFFER_SIZE_SECONDS) {
-          videoBuffer.shift(); // 丢弃最老的数据块
-        }
-      } else if (isRecording) {
-        console.warn("Background: 收到 VIDEO_CHUNK，但 request.buffer 为空或 undefined。");
-      }
+      processVideoChunk(request);
       return;
     }
 
@@ -392,3 +384,63 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     captureBug();
   }
 });
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'offscreen-video') {
+    return;
+  }
+
+  console.log("Background: Offscreen 端口已连接。");
+  videoPort = port;
+
+  port.onDisconnect.addListener(() => {
+    if (videoPort === port) {
+      videoPort = null;
+    }
+    console.log("Background: Offscreen 端口已断开。");
+  });
+
+  port.onMessage.addListener((request) => {
+    if (request?.type === 'VIDEO_CHUNK') {
+      processVideoChunk(request);
+    }
+  });
+});
+
+function processVideoChunk(request) {
+  const mimeType = request.mimeType || 'video/webm';
+  const payload = request.buffer ?? request.blob ?? null;
+  let chunkBlob = null;
+
+  if (payload instanceof ArrayBuffer) {
+    chunkBlob = new Blob([payload], { type: mimeType });
+  } else if (ArrayBuffer.isView(payload)) {
+    const view = payload;
+    chunkBlob = new Blob([view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength)], { type: mimeType });
+  } else if (payload && payload.buffer instanceof ArrayBuffer && typeof payload.byteLength === 'number') {
+    const start = payload.byteOffset || 0;
+    const end = start + payload.byteLength;
+    chunkBlob = new Blob([payload.buffer.slice(start, end)], { type: mimeType });
+  } else if (request.base64) {
+    const bytes = base64ToUint8Array(request.base64);
+    if (bytes) {
+      chunkBlob = new Blob([bytes], { type: mimeType });
+    }
+  } else if (payload instanceof Blob && typeof payload.size === 'number') {
+    chunkBlob = payload;
+  } else if (payload && payload.data && Array.isArray(payload.data)) {
+    chunkBlob = new Blob([Uint8Array.from(payload.data)], { type: mimeType });
+  }
+
+  const size = chunkBlob ? chunkBlob.size : 0;
+  console.log(`Background: 收到 VIDEO_CHUNK。大小: ${size} bytes, isRecording: ${isRecording}`);
+
+  if (isRecording && chunkBlob) {
+    videoBuffer.push(chunkBlob);
+    if (videoBuffer.length > RING_BUFFER_SIZE_SECONDS) {
+      videoBuffer.shift();
+    }
+  } else if (isRecording) {
+    console.warn("Background: 收到 VIDEO_CHUNK，但数据块无效。");
+  }
+}
